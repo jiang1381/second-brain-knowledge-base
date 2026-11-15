@@ -1,0 +1,2 @@
+# 第二大脑只用 Python 标准库 + numpy
+numpy>=1.24

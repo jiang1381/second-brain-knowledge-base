@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第二大脑</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #0e1116; color: #e6e6e6; height: 100vh; display: flex; }
+  aside { width: 370px; flex-shrink: 0; background: #151a22; border-right: 1px solid #242c38;
+          padding: 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  h1 { font-size: 18px; }
+  .sub { font-size: 12px; color: #7f8a9e; line-height: 1.6; }
+  .stats { display: flex; gap: 8px; }
+  .stat { flex: 1; background: #1b222c; border: 1px solid #28313f; border-radius: 8px; padding: 8px 10px; }
+  .stat .k { font-size: 11px; color: #7f8a9e; }
+  .stat .v { font-size: 16px; font-weight: 700; color: #7dd3fc; }
+  label { font-size: 12px; color: #a6b1c4; display: block; margin-bottom: 4px; }
+  select, input, textarea {
+    width: 100%; background: #0e1116; border: 1px solid #2a3342; border-radius: 7px;
+    color: #e6e6e6; padding: 8px; font-size: 12.5px; font-family: inherit;
+  }
+  textarea { height: 80px; resize: vertical; }
+  select:focus, input:focus, textarea:focus { outline: none; border-color: #3b82f6; }
+  button { width: 100%; padding: 9px; border: none; border-radius: 7px; cursor: pointer;
+           font-size: 12.5px; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .primary { background: #2563eb; color: #fff; }
+  .ghost { background: #232b38; color: #c4cbdd; }
+  .doc-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+  .doc { display: flex; justify-content: space-between; align-items: center; gap: 6px;
+         background: #1b222c; border: 1px solid #28313f; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+  .doc .name { color: #c4cbdd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc .del { width: 20px; height: 20px; flex-shrink: 0; background: transparent; color: #f87171;
+              padding: 0; font-size: 12px; }
+  .doc .del:hover { background: #3a1f22; border-radius: 4px; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chat { flex: 1; overflow-y: auto; padding: 26px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 82%; padding: 12px 16px; border-radius: 14px; line-height: 1.7; font-size: 14px; }
+  .msg.assistant { align-self: flex-start; background: #1a2028; border: 1px solid #28313f; border-bottom-left-radius: 4px; }
+  .msg.user { align-self: flex-end; background: #2b4bd8; border-bottom-right-radius: 4px; }
+  .cite { display: inline-block; background: #1e3a5f; color: #7dd3fc; border-radius: 4px;
+          padding: 0 4px; margin: 0 1px; font-size: 12px; font-weight: 700; }
+  .sources { margin-top: 10px; border-top: 1px dashed #28313f; padding-top: 8px; font-size: 12px; }
+  .sources summary { cursor: pointer; color: #7f9bff; }
+  .src { margin-top: 7px; color: #8b96a9; line-height: 1.55; }
+  .src b { color: #a9c1ff; }
+  .src .num { color: #7dd3fc; }
+  .low { color: #f5b451; font-size: 12px; margin-top: 8px; }
+  .empty { color: #4c5566; text-align: center; margin: auto; font-size: 14px; line-height: 2.2; }
+  #composer { padding: 14px 26px 20px; border-top: 1px solid #242c38; display: flex; gap: 10px; }
+  #question { flex: 1; }
+  #askBtn { width: 96px; }
+</style>
+</head>
+<body>
+  <aside>
+    <h1>🧠 第二大脑</h1>
+    <div class="sub">把你的笔记灌进来，用自然语言问它。</div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">笔记</div><div class="v" id="statDocs">-</div></div>
+      <div class="stat"><div class="k">文本块</div><div class="v" id="statChunks">-</div></div>
+    </div>
+
+    <div>
+      <label>检索模式</label>
+      <select id="mode">
+        <option value="0.6" selected>混合检索（向量 + 关键词）</option>
+        <option value="0.9">语义优先（向量）</option>
+        <option value="0.15">关键词优先（BM25）</option>
+      </select>
+    </div>
+
+    <div>
+      <label>我的笔记</label>
+      <div class="doc-list" id="docs"></div>
+    </div>
+
+    <div>
+      <label>添加笔记</label>
+      <input id="noteTitle" placeholder="标题">
+      <textarea id="noteContent" placeholder="内容…"></textarea>
+      <button class="primary" id="addBtn" style="margin-top:6px">保存并索引</button>
+    </div>
+
+    <button class="ghost" id="reindexBtn">🔄 重建索引</button>
+  </aside>
+
+  <main>
+    <div id="chat"><div class="empty">问点什么吧，比如：<br>「RAG 怎么减少幻觉？」<br>「我上次面试复盘写了什么？」</div></div>
+    <div id="composer">
+      <input id="question" placeholder="输入问题，回车提问…">
+      <button class="primary" id="askBtn">提问</button>
+    </div>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const chat = $("chat");
+let offline = false;
+
+function add(kind, html) {
+  const empty = chat.querySelector(".empty");
+  if (empty) empty.remove();
+  const div = document.createElement("div");
+  div.className = "msg " + kind;
+  div.innerHTML = html;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+
+async function loadMeta() {
+  const meta = await (await fetch("/api/meta")).json();
+  offline = meta.offline;
+  $("statDocs").textContent = meta.documents;
+  $("statChunks").textContent = meta.chunks;
+  if (offline) {
+    const tip = document.createElement("div");
+    tip.className = "sub";
+    tip.style.color = "#f5b451";
+    tip.textContent = "未配置 LLM_API_KEY：可以检索，暂不能问答。";
+    $("chat").before(tip);
+  }
+}
+
+async function loadDocs() {
+  const data = await (await fetch("/api/docs")).json();
+  const box = $("docs");
+  box.innerHTML = data.documents.length
+    ? data.documents.map((d) =>
+        `<div class="doc"><span class="name" title="${escapeHtml(d.id)}">${escapeHtml(d.title)}</span>` +
+        `<button class="del" onclick="delDoc('${encodeURIComponent(d.id)}')">✕</button></div>`
+      ).join("")
+    : '<div class="sub">还没有笔记</div>';
+}
+
+async function delDoc(encoded) {
+  if (!confirm("确定删除这篇笔记？")) return;
+  const data = await api("/api/delete", { id: decodeURIComponent(encoded) });
+  $("statDocs").textContent = data.stats.documents;
+  $("statChunks").textContent = data.stats.chunks;
+  loadDocs();
+}
+
+$("askBtn").onclick = ask;
+$("question").onkeydown = (e) => { if (e.key === "Enter") ask(); };
+
+async function ask() {
+  const question = $("question").value.trim();
+  if (!question) return;
+  $("question").value = "";
+  add("user", escapeHtml(question));
+  $("askBtn").disabled = true;
+  add("assistant", "检索笔记中…");
+  try {
+    const r = await api("/api/ask", { question, alpha: parseFloat($("mode").value) });
+    renderAnswer(chat.lastChild, r);
+  } catch (e) {
+    chat.lastChild.innerHTML = "⚠️ " + escapeHtml(e.message);
+  }
+  $("askBtn").disabled = false;
+  $("question").focus();
+}
+
+function renderAnswer(node, r) {
+  let html = escapeHtml(r.answer).replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>');
+  if (r.low_confidence) {
+    html += '<div class="low">⚠️ 置信度较低：可能知识库里没有直接相关的笔记</div>';
+  }
+  html += sourcesHtml(r.chunks || []);
+  node.innerHTML = html;
+}
+
+function sourcesHtml(chunks) {
+  if (!chunks || !chunks.length) return "";
+  const items = chunks.map((c, i) =>
+    `<div class="src"><span class="num">[${i + 1}]</span> <b>${escapeHtml(c.title)}</b>` +
+    `　final ${c.final_score}（向量 ${c.vector_score} / BM25 ${c.bm25_score}）` +
+    `<br>${escapeHtml(c.text.slice(0, 140))}…</div>`
+  ).join("");
+  return `<details class="sources" open><summary>📎 检索到的 ${chunks.length} 条笔记片段</summary>${items}</details>`;
+}
+
+$("addBtn").onclick = async () => {
+  const title = $("noteTitle").value.trim();
+  const content = $("noteContent").value.trim();
+  if (!title || !content) { alert("标题和内容都要填"); return; }
+  $("addBtn").disabled = true;
+  try {
+    const data = await api("/api/notes", { title, content });
+    $("noteTitle").value = "";
+    $("noteContent").value = "";
+    $("statDocs").textContent = data.stats.documents;
+    $("statChunks").textContent = data.stats.chunks;
+    loadDocs();
+  } catch (e) { alert(e.message); }
+  $("addBtn").disabled = false;
+};
+
+$("reindexBtn").onclick = async () => {
+  const data = await api("/api/reindex", {});
+  $("statDocs").textContent = data.stats.documents;
+  $("statChunks").textContent = data.stats.chunks;
+  loadDocs();
+};
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+}
+
+loadMeta();
+loadDocs();
+</script>
+</body>
+</html>
